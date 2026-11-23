@@ -84,3 +84,23 @@ func TestOpenInvalidJSON(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestListByteOrder(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "x.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("b", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("aa", "1"); err != nil {
+		t.Fatal(err)
+	}
+	l := s.List()
+	if len(l) != 2 {
+		t.Fatalf("List() len = %d, want 2: %v", len(l), l)
+	}
+	if l[0].Key != "aa" || l[1].Key != "b" {
+		t.Fatalf("List() keys = [%q %q], want [\"aa\" \"b\"] (plain byte-wise order)", l[0].Key, l[1].Key)
+	}
+}
