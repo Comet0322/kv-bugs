@@ -74,7 +74,7 @@ The store is a JSON file. Its path is chosen as follows:
 1. If the `KV_FILE` environment variable is set and non-empty, that path is used.
 2. Otherwise the file is `.kv.json` in your home directory (`$HOME/.kv.json`).
 
-A missing file is treated as an empty store, so the first `set` creates it. The file is created with mode `0600`, and the directory that contains it must already exist.
+A missing file is treated as an empty store, so the first `set` creates it with mode `0600`. An existing file keeps its mode: `set` and `del` never change it. The directory that contains the file must already exist.
 
 ## Exit codes
 
