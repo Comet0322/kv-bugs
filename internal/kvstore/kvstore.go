@@ -27,24 +27,33 @@ type Store struct {
 
 // Open loads the store at path; a missing file is an empty store.
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, data: map[string]string{}}
+	data, err := load(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{path: path, data: data}, nil
+}
+
+// load reads the store file at path; a missing or empty file is an empty map.
+func load(path string) (map[string]string, error) {
+	data := map[string]string{}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
+		return data, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	if len(b) == 0 {
-		return s, nil
+		return data, nil
 	}
-	if err := json.Unmarshal(b, &s.data); err != nil {
+	if err := json.Unmarshal(b, &data); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if s.data == nil {
-		s.data = map[string]string{}
+	if data == nil {
+		data = map[string]string{}
 	}
-	return s, nil
+	return data, nil
 }
 
 // Get returns the value for key.
@@ -55,28 +64,43 @@ func (s *Store) Get(key string) (string, bool) {
 
 // Set stores value under key and persists atomically.
 func (s *Store) Set(key, value string) error {
-	old, had := s.data[key]
-	s.data[key] = value
-	if err := s.save(); err != nil {
-		if had {
-			s.data[key] = old
-		} else {
-			delete(s.data, key)
-		}
-		return err
-	}
-	return nil
+	return s.update(func(data map[string]string) error {
+		data[key] = value
+		return nil
+	})
 }
 
 // Delete removes key, returning ErrNotFound if absent.
 func (s *Store) Delete(key string) error {
-	old, ok := s.data[key]
-	if !ok {
-		return ErrNotFound
+	return s.update(func(data map[string]string) error {
+		if _, ok := data[key]; !ok {
+			return ErrNotFound
+		}
+		delete(data, key)
+		return nil
+	})
+}
+
+// update applies mutate to the store under an exclusive lock on its
+// directory: it re-reads the file so changes made by other processes since
+// Open are kept, mutates that fresh data and saves it before unlocking.
+func (s *Store) update(mutate func(map[string]string) error) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
+		return err
 	}
-	delete(s.data, key)
+	defer unlock()
+	data, err := load(s.path)
+	if err != nil {
+		return err
+	}
+	if err := mutate(data); err != nil {
+		return err
+	}
+	old := s.data
+	s.data = data
 	if err := s.save(); err != nil {
-		s.data[key] = old
+		s.data = old
 		return err
 	}
 	return nil
@@ -89,9 +113,6 @@ func (s *Store) List() []Pair {
 		out = append(out, Pair{k, v})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if len(out[i].Key) != len(out[j].Key) {
-			return len(out[i].Key) < len(out[j].Key)
-		}
 		return out[i].Key < out[j].Key
 	})
 	return out
@@ -108,6 +129,11 @@ func (s *Store) save() error {
 		return err
 	}
 	name := tmp.Name()
+	if err := keepMode(tmp, s.path); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		os.Remove(name)
@@ -122,4 +148,17 @@ func (s *Store) save() error {
 		return err
 	}
 	return nil
+}
+
+// keepMode gives tmp the permission bits of the existing file at path, so the
+// rename does not change them; a path that does not exist yet is left alone.
+func keepMode(tmp *os.File, path string) error {
+	fi, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return tmp.Chmod(fi.Mode().Perm())
 }
