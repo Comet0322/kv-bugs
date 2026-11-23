@@ -115,3 +115,39 @@ func TestAC4_ConcurrentSetsKeepEveryKey(t *testing.T) {
 		t.Errorf("after %d concurrent sets: store holds %d keys (%d lost), want %d", n, len(got), missing, n)
 	}
 }
+
+func TestAC5_ConcurrentDelsAndSetsLoseNothing(t *testing.T) {
+	const n = 30
+	p := setup(t)
+	initial := map[string]string{}
+	for i := 1; i <= n; i++ {
+		initial[fmt.Sprintf("d%d", i)] = "x"
+	}
+	b, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var argLists [][]string
+	for i := 1; i <= n; i++ {
+		argLists = append(argLists,
+			[]string{"del", fmt.Sprintf("d%d", i)},
+			[]string{"set", fmt.Sprintf("n%d", i), fmt.Sprintf("v%d", i)})
+	}
+	requireAllExitZero(t, runConcurrently(t, argLists))
+	got := readStore(t, p)
+	for i := 1; i <= n; i++ {
+		if v, ok := got[fmt.Sprintf("d%d", i)]; ok {
+			t.Errorf("deleted key d%d is back in the store with value %q, want it absent", i, v)
+		}
+		k, want := fmt.Sprintf("n%d", i), fmt.Sprintf("v%d", i)
+		if v, ok := got[k]; !ok || v != want {
+			t.Errorf("store[%q] = %q (present %v), want %q", k, v, ok, want)
+		}
+	}
+	if len(got) != n {
+		t.Errorf("after %d concurrent dels and %d concurrent sets: store holds %d keys %v, want exactly n1..n%d", n, n, len(got), got, n)
+	}
+}
