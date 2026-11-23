@@ -137,6 +137,25 @@ func TestSetPreservesMode(t *testing.T) {
 	}
 }
 
+// I9: a store file created by Set where none existed has mode 0600.
+func TestI9_NewStoreIs0600(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("a", "1"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fi.Mode().Perm(), os.FileMode(0o600); got != want {
+		t.Fatalf("mode of new store = %v, want %v", got, want)
+	}
+}
+
 // AC3: Delete keeps the permission bits of an existing store file.
 func TestDelPreservesMode(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x.json")
