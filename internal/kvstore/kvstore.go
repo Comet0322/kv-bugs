@@ -53,32 +53,70 @@ func (s *Store) Get(key string) (string, bool) {
 	return v, ok
 }
 
-// Set stores value under key and persists atomically.
+// Set stores value under key and persists atomically. The directory lock is
+// held across a reload from disk, so a concurrent writer's keys are kept.
 func (s *Store) Set(key, value string) error {
-	old, had := s.data[key]
-	s.data[key] = value
-	if err := s.save(); err != nil {
-		if had {
-			s.data[key] = old
-		} else {
-			delete(s.data, key)
-		}
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	data, err := reload(s.path)
+	if err != nil {
+		return err
+	}
+	data[key] = value
+	if err := (&Store{path: s.path, data: data}).save(); err != nil {
+		return err
+	}
+	s.data = data
 	return nil
 }
 
-// Delete removes key, returning ErrNotFound if absent.
-func (s *Store) Delete(key string) error {
-	old, ok := s.data[key]
-	if !ok {
-		return ErrNotFound
+// reload reads the store file from disk the way Open does and returns its
+// map. A missing or empty file is an empty map; a parse error returns an error
+// and the caller writes nothing.
+func reload(path string) (map[string]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
 	}
-	delete(s.data, key)
-	if err := s.save(); err != nil {
-		s.data[key] = old
+	if err != nil {
+		return nil, err
+	}
+	if len(b) == 0 {
+		return map[string]string{}, nil
+	}
+	data := map[string]string{}
+	if err := json.Unmarshal(b, &data); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if data == nil {
+		data = map[string]string{}
+	}
+	return data, nil
+}
+
+// Delete removes key, returning ErrNotFound if absent. Like Set, it reloads
+// the file from disk under the directory lock before it writes.
+func (s *Store) Delete(key string) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	data, err := reload(s.path)
+	if err != nil {
+		return err
+	}
+	if _, ok := data[key]; !ok {
+		return ErrNotFound
+	}
+	delete(data, key)
+	if err := (&Store{path: s.path, data: data}).save(); err != nil {
+		return err
+	}
+	s.data = data
 	return nil
 }
 
@@ -89,9 +127,6 @@ func (s *Store) List() []Pair {
 		out = append(out, Pair{k, v})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if len(out[i].Key) != len(out[j].Key) {
-			return len(out[i].Key) < len(out[j].Key)
-		}
 		return out[i].Key < out[j].Key
 	})
 	return out
@@ -116,6 +151,14 @@ func (s *Store) save() error {
 	if err := tmp.Close(); err != nil {
 		os.Remove(name)
 		return err
+	}
+	// Keep the permission bits of an existing store file. A new file keeps
+	// CreateTemp's 0600. os.Chmod, not the creation mode, so umask does not apply.
+	if fi, err := os.Stat(s.path); err == nil {
+		if err := os.Chmod(name, fi.Mode().Perm()); err != nil {
+			os.Remove(name)
+			return err
+		}
 	}
 	if err := os.Rename(name, s.path); err != nil {
 		os.Remove(name)
