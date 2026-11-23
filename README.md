@@ -109,6 +109,8 @@ Because the rename happens within one directory, readers see either the old file
 
 Permissions are preserved. If the store file already exists, the temporary file takes its permission bits before the rename, so a store you have set to `0640` or `0644` keeps that mode after `set` and `del`. A store file created by `set` where none existed is `0600`.
 
+Concurrent writes are kept on POSIX systems. `set` and `del` take an exclusive `flock` on the store's directory, re-read the file under that lock, apply the change, and write it, so two processes writing at once do not overwrite each other's keys. `get` and `list` do not take the lock. The lock is a no-op on Windows, Solaris, illumos, and AIX, so there concurrent writers can still lose updates; the guarantee is POSIX-only.
+
 ## Running the tests
 
 ```sh
