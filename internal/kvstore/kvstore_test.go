@@ -104,3 +104,73 @@ func TestListByteOrder(t *testing.T) {
 		t.Fatalf("List() keys = [%q %q], want [\"aa\" \"b\"] (plain byte-wise order)", l[0].Key, l[1].Key)
 	}
 }
+
+// AC3: Set keeps the permission bits of an existing store file.
+func TestSetPreservesMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("a", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("b", "2"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fi.Mode().Perm(), os.FileMode(0o640); got != want {
+		t.Fatalf("mode after Set = %v, want %v", got, want)
+	}
+	s2, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := s2.Get("b"); !ok || v != "2" {
+		t.Fatalf("reopened b = %q %v, want \"2\" true", v, ok)
+	}
+}
+
+// AC3: Delete keeps the permission bits of an existing store file.
+func TestDelPreservesMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("a", "1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("b", "2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := fi.Mode().Perm(), os.FileMode(0o640); got != want {
+		t.Fatalf("mode after Delete = %v, want %v", got, want)
+	}
+	s2, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s2.Get("a"); ok {
+		t.Fatal("reopened store still has deleted key a")
+	}
+	if v, ok := s2.Get("b"); !ok || v != "2" {
+		t.Fatalf("reopened b = %q %v, want \"2\" true", v, ok)
+	}
+}
