@@ -58,3 +58,34 @@ func TestSetKeepsExistingFileMode(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteKeepsExistingFileMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		perm os.FileMode
+	}{
+		{"AC3_delete_keeps_0644", 0o644},
+		{"AC3_delete_keeps_0640", 0o640},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := existingStore(t, tc.perm)
+			s, err := Open(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Delete("k"); err != nil {
+				t.Fatalf("Delete(k): got error %v, want nil", err)
+			}
+			r, err := Open(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, ok := r.Get("k"); ok {
+				t.Fatalf("reopened Get(k) = %q, true; want absent", got)
+			}
+			if got := modeOf(t, p); got != tc.perm {
+				t.Fatalf("mode after Delete = %#o, want %#o", got, tc.perm)
+			}
+		})
+	}
+}

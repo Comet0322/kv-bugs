@@ -49,3 +49,26 @@ func TestCLISetKeepsExistingFileMode(t *testing.T) {
 		})
 	}
 }
+
+func TestCLIDelKeepsExistingFileMode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		perm os.FileMode
+	}{
+		{"AC3_kv_del_keeps_0644", 0o644},
+		{"AC3_kv_del_keeps_0640", 0o640},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := existingStoreFile(t, tc.perm)
+			if c, o, e := do(t, "del", "k"); c != 0 {
+				t.Fatalf("kv del k: exit %d (stdout %q, stderr %q), want 0", c, o, e)
+			}
+			if c, o, _ := do(t, "get", "k"); c != 1 {
+				t.Fatalf("kv get k after del: exit %d stdout %q, want exit 1", c, o)
+			}
+			if got := permOf(t, p); got != tc.perm {
+				t.Fatalf("mode after kv del = %#o, want %#o", got, tc.perm)
+			}
+		})
+	}
+}
