@@ -35,7 +35,7 @@ kv list
 - `set` creates the key or overwrites its value.
 - `get` prints the value followed by a newline.
 - `del` removes the key.
-- `list` prints every pair as `key=value`, sorted by key in plain byte-wise ascending order. Keys are compared as raw bytes, so uppercase letters come before lowercase (`B` before `a`), and `aa` comes before `b` because it compares by content, not by length.
+- `list` prints every pair as `key=value`, sorted by key.
 
 ### Examples
 
