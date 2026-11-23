@@ -35,7 +35,7 @@ kv list
 - `set` creates the key or overwrites its value.
 - `get` prints the value followed by a newline.
 - `del` removes the key.
-- `list` prints every pair as `key=value`, sorted by key.
+- `list` prints every pair as `key=value`, sorted by key in plain byte-wise order (the order of Go's `<` on strings, so `B` comes before `a` and `aa` comes before `b`).
 
 ### Examples
 
