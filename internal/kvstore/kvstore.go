@@ -103,6 +103,13 @@ func (s *Store) save() error {
 		return err
 	}
 	name := tmp.Name()
+	if fi, err := os.Stat(s.path); err == nil {
+		if err := tmp.Chmod(fi.Mode().Perm()); err != nil {
+			tmp.Close()
+			os.Remove(name)
+			return err
+		}
+	}
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		os.Remove(name)
