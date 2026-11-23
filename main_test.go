@@ -90,3 +90,16 @@ func TestDefaultPathHome(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestListByteOrderCLI(t *testing.T) {
+	setup(t)
+	do(t, "set", "b", "2")
+	do(t, "set", "aa", "1")
+	c, o, e := do(t, "list")
+	if c != 0 || e != "" {
+		t.Fatalf("list: exit %d stderr %q, want exit 0 and empty stderr", c, e)
+	}
+	if want := "aa=1\nb=2\n"; o != want {
+		t.Fatalf("list stdout = %q, want %q", o, want)
+	}
+}
