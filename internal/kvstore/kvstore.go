@@ -55,31 +55,44 @@ func (s *Store) Get(key string) (string, bool) {
 
 // Set stores value under key and persists atomically.
 func (s *Store) Set(key, value string) error {
-	old, had := s.data[key]
-	s.data[key] = value
-	if err := s.save(); err != nil {
-		if had {
-			s.data[key] = old
-		} else {
-			delete(s.data, key)
-		}
+	return s.update(func(data map[string]string) error {
+		data[key] = value
+		return nil
+	})
+}
+
+// update serialises writers to the store's directory: under an exclusive lock
+// it re-reads the store from disk, applies change to that fresh data and saves
+// it. Nothing is written if the re-read or change fails.
+func (s *Store) update(change func(map[string]string) error) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	fresh, err := Open(s.path)
+	if err != nil {
+		return err
+	}
+	if err := change(fresh.data); err != nil {
+		return err
+	}
+	if err := fresh.save(); err != nil {
+		return err
+	}
+	s.data = fresh.data
 	return nil
 }
 
 // Delete removes key, returning ErrNotFound if absent.
 func (s *Store) Delete(key string) error {
-	old, ok := s.data[key]
-	if !ok {
-		return ErrNotFound
-	}
-	delete(s.data, key)
-	if err := s.save(); err != nil {
-		s.data[key] = old
-		return err
-	}
-	return nil
+	return s.update(func(data map[string]string) error {
+		if _, ok := data[key]; !ok {
+			return ErrNotFound
+		}
+		delete(data, key)
+		return nil
+	})
 }
 
 // List returns all pairs sorted by key.
@@ -88,12 +101,7 @@ func (s *Store) List() []Pair {
 	for k, v := range s.data {
 		out = append(out, Pair{k, v})
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if len(out[i].Key) != len(out[j].Key) {
-			return len(out[i].Key) < len(out[j].Key)
-		}
-		return out[i].Key < out[j].Key
-	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out
 }
 
@@ -108,6 +116,13 @@ func (s *Store) save() error {
 		return err
 	}
 	name := tmp.Name()
+	if fi, err := os.Stat(s.path); err == nil {
+		if err := tmp.Chmod(fi.Mode().Perm()); err != nil {
+			tmp.Close()
+			os.Remove(name)
+			return err
+		}
+	}
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		os.Remove(name)
