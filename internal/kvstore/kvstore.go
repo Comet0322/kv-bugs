@@ -97,17 +97,26 @@ func reload(path string) (map[string]string, error) {
 	return data, nil
 }
 
-// Delete removes key, returning ErrNotFound if absent.
+// Delete removes key, returning ErrNotFound if absent. Like Set, it reloads
+// the file from disk under the directory lock before it writes.
 func (s *Store) Delete(key string) error {
-	old, ok := s.data[key]
-	if !ok {
-		return ErrNotFound
-	}
-	delete(s.data, key)
-	if err := s.save(); err != nil {
-		s.data[key] = old
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	data, err := reload(s.path)
+	if err != nil {
+		return err
+	}
+	if _, ok := data[key]; !ok {
+		return ErrNotFound
+	}
+	delete(data, key)
+	if err := (&Store{path: s.path, data: data}).save(); err != nil {
+		return err
+	}
+	s.data = data
 	return nil
 }
 
