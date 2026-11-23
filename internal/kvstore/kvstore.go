@@ -89,9 +89,6 @@ func (s *Store) List() []Pair {
 		out = append(out, Pair{k, v})
 	}
 	sort.Slice(out, func(i, j int) bool {
-		if len(out[i].Key) != len(out[j].Key) {
-			return len(out[i].Key) < len(out[j].Key)
-		}
 		return out[i].Key < out[j].Key
 	})
 	return out
