@@ -95,9 +95,18 @@ func (s *Store) List() []Pair {
 }
 
 // save writes to a temp file in the same directory, then renames over the target.
+// An existing store file keeps its permission bits; a new one is created with 0600.
 func (s *Store) save() error {
 	b, err := json.Marshal(s.data)
 	if err != nil {
+		return err
+	}
+	mode := os.FileMode(0o600)
+	fi, err := os.Stat(s.path)
+	switch {
+	case err == nil:
+		mode = fi.Mode().Perm()
+	case !errors.Is(err, os.ErrNotExist):
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".kv-*.tmp")
@@ -105,6 +114,11 @@ func (s *Store) save() error {
 		return err
 	}
 	name := tmp.Name()
+	if err := tmp.Chmod(mode); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		os.Remove(name)
