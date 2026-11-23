@@ -5,6 +5,7 @@ package kvstore
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func modeOf(t *testing.T, p string) os.FileMode {
 	return fi.Mode().Perm()
 }
 
-func TestStoreSetPreservesPermissions(t *testing.T) {
+func TestAC2_StoreSetPreservesPermissions(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		mode os.FileMode
@@ -62,7 +63,7 @@ func TestStoreSetPreservesPermissions(t *testing.T) {
 	}
 }
 
-func TestStoreDeletePreservesPermissions(t *testing.T) {
+func TestAC3_StoreDeletePreservesPermissions(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		mode os.FileMode
@@ -93,5 +94,21 @@ func TestStoreDeletePreservesPermissions(t *testing.T) {
 				t.Errorf("after reopen Get(keep) = %q, %v; want \"k\", true", v, ok)
 			}
 		})
+	}
+}
+
+func TestI5_StoreSetNewFileIs0600(t *testing.T) {
+	old := syscall.Umask(0o022)
+	defer syscall.Umask(old)
+	p := filepath.Join(t.TempDir(), "new.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := s.Set("a", "1"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if got := modeOf(t, p); got != 0o600 {
+		t.Errorf("I5: mode of newly created store = %#o, want 0600", got)
 	}
 }

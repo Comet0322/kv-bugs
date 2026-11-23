@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"syscall"
 	"testing"
 )
 
@@ -30,7 +31,7 @@ func permOf(t *testing.T, p string) os.FileMode {
 	return fi.Mode().Perm()
 }
 
-func TestCLISetPreservesPermissions(t *testing.T) {
+func TestAC2_CLISetPreservesPermissions(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		mode os.FileMode
@@ -53,7 +54,7 @@ func TestCLISetPreservesPermissions(t *testing.T) {
 	}
 }
 
-func TestCLIDelPreservesPermissions(t *testing.T) {
+func TestAC3_CLIDelPreservesPermissions(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		mode os.FileMode
@@ -73,5 +74,17 @@ func TestCLIDelPreservesPermissions(t *testing.T) {
 				t.Errorf("kv get gone = %d %q, want 1 \"\" (deleted)", c, o)
 			}
 		})
+	}
+}
+
+func TestI5_CLISetNewFileIs0600(t *testing.T) {
+	old := syscall.Umask(0o022)
+	defer syscall.Umask(old)
+	p := setup(t)
+	if c, o, e := do(t, "set", "a", "1"); c != 0 || o != "" || e != "" {
+		t.Fatalf("kv set = %d %q %q, want 0 \"\" \"\"", c, o, e)
+	}
+	if got := permOf(t, p); got != 0o600 {
+		t.Errorf("I5: mode of store created by kv set = %#o, want 0600", got)
 	}
 }
