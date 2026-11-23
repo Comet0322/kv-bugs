@@ -107,6 +107,8 @@ Every `set` and `del` rewrites the whole file safely:
 
 Because the rename happens within one directory, readers see either the old file or the new one, never a partial write. If a write fails, the temporary file is removed and the in-memory change is rolled back, so no stray `.kv-*.tmp` files are left behind.
 
+Permissions are preserved. If the store file already exists, the temporary file takes its permission bits before the rename, so a store you have set to `0640` or `0644` keeps that mode after `set` and `del`. A store file created by `set` where none existed is `0600`.
+
 ## Running the tests
 
 ```sh
