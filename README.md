@@ -107,6 +107,8 @@ Every `set` and `del` rewrites the whole file safely:
 
 Because the rename happens within one directory, readers see either the old file or the new one, never a partial write. If a write fails, the temporary file is removed and the in-memory change is rolled back, so no stray `.kv-*.tmp` files are left behind.
 
+Concurrent `set` and `del` commands are serialised by an exclusive `flock` on the store's directory. Each one takes the lock, re-reads the store file, applies its change and writes the file, then releases the lock, so writes made by separate `kv` processes at the same time are all kept and a deleted key is not brought back by a concurrent `set`. The lock covers every writer in that directory, not only this file. This guarantee is POSIX-only: on other platforms the lock is a no-op and concurrent writers can still lose updates. An existing store file keeps its permission bits across `set` and `del`.
+
 ## Running the tests
 
 ```sh
