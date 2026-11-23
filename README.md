@@ -76,6 +76,8 @@ The store is a JSON file. Its path is chosen as follows:
 
 A missing file is treated as an empty store, so the first `set` creates it. The file is created with mode `0600`, and the directory that contains it must already exist.
 
+If the store file already exists, `set` and `del` keep its permission bits, so a file you have made readable to a group (for example `0640` or `0644`) stays that way after a write. Only the permission bits are kept; the owner and group of the file are not changed.
+
 ## Exit codes
 
 | Code | Meaning |
