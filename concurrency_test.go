@@ -4,10 +4,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -72,56 +74,63 @@ func requireAllExitZero(t *testing.T, procs []*kvProc) {
 	}
 }
 
-func listStore(t *testing.T) string {
+// readStore decodes the store file at path directly, without going through
+// the package under test.
+func readStore(t *testing.T, path string) map[string]string {
 	t.Helper()
-	c, o, e := do(t, "list")
-	if c != 0 {
-		t.Fatalf("kv list = %d %q %q, want exit 0", c, o, e)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read store %s: %v, want a store file", path, err)
 	}
-	return o
+	m := map[string]string{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("parse store %q: %v, want a JSON object", b, err)
+	}
+	return m
 }
 
 func TestAC4_ConcurrentSetsKeepEveryKey(t *testing.T) {
 	const n = 50
 	path := setup(t)
 	var argLists [][]string
-	var want strings.Builder
-	keys := make([]string, 0, n)
+	want := map[string]string{}
 	for i := 1; i <= n; i++ {
-		keys = append(keys, fmt.Sprintf("k%02d", i))
-	}
-	for _, k := range keys {
+		k := fmt.Sprintf("k%02d", i)
 		argLists = append(argLists, []string{"set", k, "v" + k})
-		fmt.Fprintf(&want, "%s=v%s\n", k, k)
+		want[k] = "v" + k
 	}
 	requireAllExitZero(t, runConcurrently(t, path, argLists))
-	got := listStore(t)
-	if got != want.String() {
-		t.Errorf("kv list after %d concurrent sets has %d lines, want %d\ngot:\n%swant:\n%s",
-			n, strings.Count(got, "\n"), n, got, want.String())
+	if got := readStore(t, path); !reflect.DeepEqual(got, want) {
+		t.Errorf("store after %d concurrent kv set has %d keys, want %d\ngot:  %v\nwant: %v",
+			n, len(got), len(want), got, want)
 	}
 }
 
 func TestAC5_ConcurrentDelsAndSetsLoseNothing(t *testing.T) {
 	const n = 25
 	path := setup(t)
+	seed := map[string]string{}
 	for i := 1; i <= n; i++ {
-		if c, o, e := do(t, "set", fmt.Sprintf("d%02d", i), "old"); c != 0 {
-			t.Fatalf("seed kv set d%02d = %d %q %q, want exit 0", i, c, o, e)
-		}
+		seed[fmt.Sprintf("d%02d", i)] = "old"
+	}
+	b, err := json.Marshal(seed)
+	if err != nil {
+		t.Fatalf("marshal seed: %v", err)
+	}
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatalf("write seed store: %v", err)
 	}
 	var argLists [][]string
-	var want strings.Builder
+	want := map[string]string{}
 	for i := 1; i <= n; i++ {
 		argLists = append(argLists,
 			[]string{"del", fmt.Sprintf("d%02d", i)},
 			[]string{"set", fmt.Sprintf("n%02d", i), fmt.Sprintf("v%02d", i)})
-		fmt.Fprintf(&want, "n%02d=v%02d\n", i, i)
+		want[fmt.Sprintf("n%02d", i)] = fmt.Sprintf("v%02d", i)
 	}
 	requireAllExitZero(t, runConcurrently(t, path, argLists))
-	got := listStore(t)
-	if got != want.String() {
-		t.Errorf("kv list after %d concurrent dels and %d concurrent sets:\ngot:\n%swant exactly:\n%s",
-			n, n, got, want.String())
+	if got := readStore(t, path); !reflect.DeepEqual(got, want) {
+		t.Errorf("store after %d concurrent kv del and %d concurrent kv set:\ngot:  %v\nwant exactly: %v",
+			n, n, got, want)
 	}
 }
