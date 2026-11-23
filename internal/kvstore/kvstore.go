@@ -105,6 +105,11 @@ func (s *Store) save() error {
 		return err
 	}
 	name := tmp.Name()
+	if err := keepMode(tmp, s.path); err != nil {
+		tmp.Close()
+		os.Remove(name)
+		return err
+	}
 	if _, err := tmp.Write(b); err != nil {
 		tmp.Close()
 		os.Remove(name)
@@ -119,4 +124,17 @@ func (s *Store) save() error {
 		return err
 	}
 	return nil
+}
+
+// keepMode gives tmp the permission bits of the existing file at path, so the
+// rename does not change them; a path that does not exist yet is left alone.
+func keepMode(tmp *os.File, path string) error {
+	fi, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return tmp.Chmod(fi.Mode().Perm())
 }
