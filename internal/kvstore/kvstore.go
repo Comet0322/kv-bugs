@@ -55,16 +55,32 @@ func (s *Store) Get(key string) (string, bool) {
 
 // Set stores value under key and persists atomically.
 func (s *Store) Set(key, value string) error {
-	old, had := s.data[key]
-	s.data[key] = value
-	if err := s.save(); err != nil {
-		if had {
-			s.data[key] = old
-		} else {
-			delete(s.data, key)
-		}
+	return s.update(func(data map[string]string) error {
+		data[key] = value
+		return nil
+	})
+}
+
+// update serialises writers to the store's directory: under an exclusive lock
+// it re-reads the store from disk, applies change to that fresh data and saves
+// it. Nothing is written if the re-read or change fails.
+func (s *Store) update(change func(map[string]string) error) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	fresh, err := Open(s.path)
+	if err != nil {
+		return err
+	}
+	if err := change(fresh.data); err != nil {
+		return err
+	}
+	if err := fresh.save(); err != nil {
+		return err
+	}
+	s.data = fresh.data
 	return nil
 }
 
