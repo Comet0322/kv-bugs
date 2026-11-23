@@ -1,8 +1,10 @@
 package kvstore
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -191,5 +193,52 @@ func TestDelPreservesMode(t *testing.T) {
 	}
 	if v, ok := s2.Get("b"); !ok || v != "2" {
 		t.Fatalf("reopened b = %q %v, want \"2\" true", v, ok)
+	}
+}
+
+// openHandles opens n independent Store handles on path, all before any of
+// them writes, so every handle starts from the same snapshot.
+func openHandles(t *testing.T, path string, n int) []*Store {
+	t.Helper()
+	hs := make([]*Store, n)
+	for i := range hs {
+		s, err := Open(path)
+		if err != nil {
+			t.Fatalf("Open handle %d: %v", i, err)
+		}
+		hs[i] = s
+	}
+	return hs
+}
+
+// AC4: concurrent Set through independent handles keeps every write.
+func TestConcurrentSetKeepsAllWrites(t *testing.T) {
+	const n = 20
+	p := filepath.Join(t.TempDir(), "x.json")
+	hs := openHandles(t, p, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range hs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = hs[i].Set(fmt.Sprintf("k%d", i), fmt.Sprintf("v%d", i))
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Set k%d: error %v, want nil", i, err)
+		}
+	}
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		k, want := fmt.Sprintf("k%d", i), fmt.Sprintf("v%d", i)
+		if v, ok := s.Get(k); !ok || v != want {
+			t.Errorf("after concurrent Set, Get(%q) = %q, %v; want %q, true", k, v, ok, want)
+		}
 	}
 }
