@@ -53,19 +53,48 @@ func (s *Store) Get(key string) (string, bool) {
 	return v, ok
 }
 
-// Set stores value under key and persists atomically.
+// Set stores value under key and persists atomically. The directory lock is
+// held across a reload from disk, so a concurrent writer's keys are kept.
 func (s *Store) Set(key, value string) error {
-	old, had := s.data[key]
-	s.data[key] = value
-	if err := s.save(); err != nil {
-		if had {
-			s.data[key] = old
-		} else {
-			delete(s.data, key)
-		}
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
 		return err
 	}
+	defer unlock()
+	data, err := reload(s.path)
+	if err != nil {
+		return err
+	}
+	data[key] = value
+	if err := (&Store{path: s.path, data: data}).save(); err != nil {
+		return err
+	}
+	s.data = data
 	return nil
+}
+
+// reload reads the store file from disk the way Open does and returns its
+// map. A missing or empty file is an empty map; a parse error returns an error
+// and the caller writes nothing.
+func reload(path string) (map[string]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(b) == 0 {
+		return map[string]string{}, nil
+	}
+	data := map[string]string{}
+	if err := json.Unmarshal(b, &data); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if data == nil {
+		data = map[string]string{}
+	}
+	return data, nil
 }
 
 // Delete removes key, returning ErrNotFound if absent.
