@@ -242,3 +242,41 @@ func TestConcurrentSetKeepsAllWrites(t *testing.T) {
 		}
 	}
 }
+
+// AC5: concurrent Delete does not resurrect deleted keys or drop other keys.
+func TestConcurrentDeleteKeepsAllDeletes(t *testing.T) {
+	const n = 20
+	p := filepath.Join(t.TempDir(), "x.json")
+	seed, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < n; i++ {
+		if err := seed.Set(fmt.Sprintf("k%d", i), "v"); err != nil {
+			t.Fatalf("seed Set k%d: %v", i, err)
+		}
+	}
+	hs := openHandles(t, p, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range hs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = hs[i].Delete(fmt.Sprintf("k%d", i))
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent Delete k%d: error %v, want nil", i, err)
+		}
+	}
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l := s.List(); len(l) != 0 {
+		t.Errorf("after concurrent Delete, %d keys remain, want 0: %v", len(l), l)
+	}
+}
