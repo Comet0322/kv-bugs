@@ -86,16 +86,13 @@ func (s *Store) update(change func(map[string]string) error) error {
 
 // Delete removes key, returning ErrNotFound if absent.
 func (s *Store) Delete(key string) error {
-	old, ok := s.data[key]
-	if !ok {
-		return ErrNotFound
-	}
-	delete(s.data, key)
-	if err := s.save(); err != nil {
-		s.data[key] = old
-		return err
-	}
-	return nil
+	return s.update(func(data map[string]string) error {
+		if _, ok := data[key]; !ok {
+			return ErrNotFound
+		}
+		delete(data, key)
+		return nil
+	})
 }
 
 // List returns all pairs sorted by key.
