@@ -27,24 +27,43 @@ type Store struct {
 
 // Open loads the store at path; a missing file is an empty store.
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, data: map[string]string{}}
+	data, err := readData(path)
+	if err != nil {
+		return nil, err
+	}
+	return &Store{path: path, data: data}, nil
+}
+
+// readData parses the store file at path with the rules Open uses.
+func readData(path string) (map[string]string, error) {
+	data := map[string]string{}
 	b, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return s, nil
+		return data, nil
 	}
 	if err != nil {
 		return nil, err
 	}
 	if len(b) == 0 {
-		return s, nil
+		return data, nil
 	}
-	if err := json.Unmarshal(b, &s.data); err != nil {
+	if err := json.Unmarshal(b, &data); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if s.data == nil {
-		s.data = map[string]string{}
+	if data == nil {
+		data = map[string]string{}
 	}
-	return s, nil
+	return data, nil
+}
+
+// reload replaces s.data with the current contents of the store file.
+func (s *Store) reload() error {
+	data, err := readData(s.path)
+	if err != nil {
+		return err
+	}
+	s.data = data
+	return nil
 }
 
 // Get returns the value for key.
@@ -53,8 +72,18 @@ func (s *Store) Get(key string) (string, bool) {
 	return v, ok
 }
 
-// Set stores value under key and persists atomically.
+// Set stores value under key and persists atomically. The store file is
+// re-read under the directory lock, so writes made through other handles since
+// Open are kept.
 func (s *Store) Set(key, value string) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.reload(); err != nil {
+		return err
+	}
 	old, had := s.data[key]
 	s.data[key] = value
 	if err := s.save(); err != nil {
@@ -68,8 +97,18 @@ func (s *Store) Set(key, value string) error {
 	return nil
 }
 
-// Delete removes key, returning ErrNotFound if absent.
+// Delete removes key, returning ErrNotFound if absent. Like Set, it works on
+// the store file as it is under the directory lock, so a key another handle has
+// already removed is not written back.
 func (s *Store) Delete(key string) error {
+	unlock, err := lockDir(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if err := s.reload(); err != nil {
+		return err
+	}
 	old, ok := s.data[key]
 	if !ok {
 		return ErrNotFound
