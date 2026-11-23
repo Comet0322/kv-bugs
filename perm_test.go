@@ -52,3 +52,26 @@ func TestCLISetPreservesPermissions(t *testing.T) {
 		})
 	}
 }
+
+func TestCLIDelPreservesPermissions(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mode os.FileMode
+	}{
+		{"AC3_kv_del_keeps_0644", 0o644},
+		{"AC3_kv_del_keeps_0640", 0o640},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := existingStoreCLI(t, tc.mode)
+			if c, o, e := do(t, "del", "gone"); c != 0 || o != "" || e != "" {
+				t.Fatalf("kv del = %d %q %q, want 0 \"\" \"\"", c, o, e)
+			}
+			if got := permOf(t, p); got != tc.mode {
+				t.Errorf("mode after kv del = %#o, want %#o", got, tc.mode)
+			}
+			if c, o, _ := do(t, "get", "gone"); c != 1 || o != "" {
+				t.Errorf("kv get gone = %d %q, want 1 \"\" (deleted)", c, o)
+			}
+		})
+	}
+}
