@@ -101,3 +101,27 @@ func TestAC4_ConcurrentSetsKeepEveryKey(t *testing.T) {
 			n, strings.Count(got, "\n"), n, got, want.String())
 	}
 }
+
+func TestAC5_ConcurrentDelsAndSetsLoseNothing(t *testing.T) {
+	const n = 25
+	path := setup(t)
+	for i := 1; i <= n; i++ {
+		if c, o, e := do(t, "set", fmt.Sprintf("d%02d", i), "old"); c != 0 {
+			t.Fatalf("seed kv set d%02d = %d %q %q, want exit 0", i, c, o, e)
+		}
+	}
+	var argLists [][]string
+	var want strings.Builder
+	for i := 1; i <= n; i++ {
+		argLists = append(argLists,
+			[]string{"del", fmt.Sprintf("d%02d", i)},
+			[]string{"set", fmt.Sprintf("n%02d", i), fmt.Sprintf("v%02d", i)})
+		fmt.Fprintf(&want, "n%02d=v%02d\n", i, i)
+	}
+	requireAllExitZero(t, runConcurrently(t, path, argLists))
+	got := listStore(t)
+	if got != want.String() {
+		t.Errorf("kv list after %d concurrent dels and %d concurrent sets:\ngot:\n%swant exactly:\n%s",
+			n, n, got, want.String())
+	}
+}
