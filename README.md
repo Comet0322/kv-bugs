@@ -107,6 +107,10 @@ Every `set` and `del` rewrites the whole file safely:
 
 Because the rename happens within one directory, readers see either the old file or the new one, never a partial write. If a write fails, the temporary file is removed and the in-memory change is rolled back, so no stray `.kv-*.tmp` files are left behind.
 
+Concurrent writes from several processes are serialised. Each `set` and `del` takes an exclusive `flock` on the store's directory, re-reads the store file while it holds the lock, applies its change to that fresh copy, and then releases the lock. So when several `kv` processes write the same store at once, every successful write is kept, and a deleted key is not brought back. `get` and `list` take no lock. The lock is held on the directory itself, so no lock file is created there.
+
+The lock needs `flock`. On Windows, Solaris and AIX it is a no-op, so concurrent writes from several processes are not guaranteed to be kept on those platforms.
+
 ## Running the tests
 
 ```sh
