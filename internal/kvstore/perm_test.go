@@ -89,3 +89,18 @@ func TestDeleteKeepsExistingFileMode(t *testing.T) {
 		})
 	}
 }
+
+func TestI5_NewStoreIs0600(t *testing.T) {
+	withUmask(t, 0o022)
+	p := filepath.Join(t.TempDir(), "x.json")
+	s, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set("a", "1"); err != nil {
+		t.Fatalf("Set: got error %v, want nil", err)
+	}
+	if got := modeOf(t, p); got != 0o600 {
+		t.Fatalf("mode of new store = %#o, want %#o", got, os.FileMode(0o600))
+	}
+}

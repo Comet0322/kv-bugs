@@ -72,3 +72,14 @@ func TestCLIDelKeepsExistingFileMode(t *testing.T) {
 		})
 	}
 }
+
+func TestI5_KvSetCreatesStore0600(t *testing.T) {
+	withUmask(t, 0o022)
+	p := setup(t)
+	if c, o, e := do(t, "set", "a", "1"); c != 0 {
+		t.Fatalf("kv set a 1: exit %d (stdout %q, stderr %q), want 0", c, o, e)
+	}
+	if got := permOf(t, p); got != 0o600 {
+		t.Fatalf("mode of new store after kv set = %#o, want %#o", got, os.FileMode(0o600))
+	}
+}
