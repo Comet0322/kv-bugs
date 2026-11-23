@@ -114,6 +114,14 @@ func (s *Store) save() error {
 		os.Remove(name)
 		return err
 	}
+	// Keep the permission bits of an existing store file. A new file keeps
+	// CreateTemp's 0600. os.Chmod, not the creation mode, so umask does not apply.
+	if fi, err := os.Stat(s.path); err == nil {
+		if err := os.Chmod(name, fi.Mode().Perm()); err != nil {
+			os.Remove(name)
+			return err
+		}
+	}
 	if err := os.Rename(name, s.path); err != nil {
 		os.Remove(name)
 		return err
